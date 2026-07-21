@@ -6,6 +6,24 @@ El proyecto **Lectura Masiva de Contratos** tiene como objetivo implementar una 
 
 El alcance de despliegue de esta fase considera únicamente los componentes de la nube de **Microsoft Azure**. No se desplegarán recursos de Huawei Cloud ni componentes fuera del diagrama aprobado.
 
+## Índice
+
+1. [Resumen del proyecto](#1-resumen-del-proyecto)
+2. [Alcance de la solución Azure](#2-alcance-de-la-solución-azure)
+3. [Componentes Azure requeridos](#3-componentes-azure-requeridos)
+4. [Componentes fuera de alcance](#4-componentes-fuera-de-alcance)
+5. [Diagrama de despliegue](#5-diagrama-de-despliegue)
+6. [Flujo funcional esperado](#6-flujo-funcional-esperado)
+7. [Regiones permitidas](#7-regiones-permitidas)
+8. [Requerimientos de red](#8-requerimientos-de-red)
+9. [Requerimientos de Microsoft 365](#9-requerimientos-de-microsoft-365)
+10. [Requerimientos de Azure Landing Zone](#10-requerimientos-de-azure-landing-zone)
+11. [Niveles de permisos y roles](#11-niveles-de-permisos-y-roles)
+12. [Parámetros requeridos para el despliegue](#12-parámetros-requeridos-para-el-despliegue)
+13. [Validaciones previas al despliegue](#13-validaciones-previas-al-despliegue)
+14. [Entregables esperados](#14-entregables-esperados)
+15. [Consideraciones importantes](#15-consideraciones-importantes)
+
 ## 2. Alcance de la solución Azure
 
 | Área | Alcance |
@@ -52,10 +70,64 @@ El alcance de despliegue de esta fase considera únicamente los componentes de l
 | AKS | No aparece en el diagrama aprobado |
 | Azure SQL / Cosmos DB | No aparecen en la sección Azure |
 | Service Bus / Event Grid | No aparecen en la sección Azure |
-| Key Vault | Solo se incluirá si el cliente lo aprueba como dependencia técnica |
+| Key Vault | No forma parte del despliegue base; se incluirá solo si el cliente lo aprueba como dependencia técnica |
 | Application Insights | Solo se incluirá si el cliente aprueba observabilidad adicional |
 
-## 5. Diagrama textual de despliegue
+> **Nota de seguridad:** aunque Key Vault está fuera del alcance inicial, la *shared key* de la VPN y cualquier otro secreto **no deben quedar en texto plano** en parámetros de Bicep, pipelines o el repositorio. Mientras Key Vault no sea aprobado, la llave debe inyectarse en tiempo de despliegue mediante un mecanismo seguro (parámetro marcado `@secure()`, Azure DevOps/GitHub secret o variable protegida) y nunca versionarse en control de código.
+
+## 5. Diagrama de despliegue
+
+### 5.1 Diagrama Mermaid
+
+```mermaid
+flowchart TB
+    subgraph M365["Microsoft 365"]
+        SPO["SharePoint Online\nBiblioteca de contratos PDF"]
+    end
+
+    subgraph AZ["Microsoft Azure - Región permitida en América"]
+        subgraph NET["rg-lectura-contratos-network-env"]
+            VNET["VNet vnet-lectura-contratos-env"]
+            GW["Azure VPN Gateway\n(GatewaySubnet)"]
+            PIP["Public IP"]
+            LNG["Local Network Gateway\n(Huawei endpoint)"]
+            VPNCONN["VPN Connection\nIPsec/IKEv2"]
+            VNET --> GW
+            GW --- PIP
+            GW --> VPNCONN
+            VPNCONN --> LNG
+        end
+
+        subgraph INTG["rg-lectura-contratos-integration-env"]
+            LA["Azure Logic Apps"]
+            MI["Managed Identity"]
+            DI["Azure AI Document Intelligence"]
+            APICONN["API Connection SharePoint"]
+            LA --> APICONN
+            LA --> DI
+            LA -.-> MI
+        end
+
+        subgraph SEC["rg-lectura-contratos-security-env"]
+            POL["Azure Policy\n(regiones, tags, tipos)"]
+            RBAC["RBAC Assignments"]
+        end
+    end
+
+    subgraph HW["Huawei Cloud (no desplegado por Azure IaC)"]
+        HWGW["Huawei VPN Gateway"]
+        PG["PostgreSQL"]
+        OBS["OBS / contratos indexados"]
+    end
+
+    SPO -- "Lectura de metadatos y binarios PDF" --> APICONN
+    LNG -.-> HWGW
+    LA -- "Envío de variables validadas" --> HWGW
+    HWGW --> PG
+    HWGW --> OBS
+```
+
+### 5.2 Diagrama textual de despliegue
 
 ```text
 Microsoft 365
@@ -144,8 +216,9 @@ La región recomendada para iniciar la demo es **East US (`eastus`)**.
 | Logic Apps subnet prod | `10.240.33.0/26` |
 | CIDR Huawei | Debe ser proporcionado por el cliente |
 | IP pública Huawei VPN | Debe ser proporcionada por el cliente |
-| Shared key VPN | Debe ser proporcionada de forma segura |
+| Shared key VPN | Debe ser proporcionada de forma segura (parámetro `@secure()`, nunca en texto plano ni en el repositorio) |
 | No traslape | Azure, Huawei y red corporativa no deben compartir rangos IP |
+| Tamaño mínimo de GatewaySubnet | Se recomienda `/27` como mínimo; `/26` (como el usado en dev/test/prod) da margen para SKUs de mayor capacidad o configuraciones activo-activo |
 
 ## 9. Requerimientos de Microsoft 365
 
@@ -246,4 +319,6 @@ Antes de desplegar se debe validar:
 - No se deben guardar secretos, contratos reales ni datos sensibles en el repositorio.
 - Cualquier componente adicional fuera del diagrama debe ser aprobado explícitamente por el cliente.
 - Si se usa Logic Apps Standard, podrían requerirse dependencias técnicas de plataforma; estas deben documentarse claramente antes del despliegue.
+- Sin Application Insights aprobado, se recomienda al menos habilitar los logs de diagnóstico nativos de Logic Apps y Document Intelligence hacia Log Analytics para poder auditar fallos y confianza de extracción.
+- La llave compartida (`vpnSharedKey`) y cualquier credencial deben tratarse como secretos incluso mientras Key Vault no esté aprobado; usar parámetros `@secure()` en Bicep y secretos de pipeline (GitHub Actions / Azure DevOps) para su inyección.
 
