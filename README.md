@@ -85,16 +85,16 @@ El alcance de despliegue de esta fase considera únicamente los componentes de l
 ```mermaid
 flowchart TB
     subgraph M365["Microsoft 365"]
-        SPO["SharePoint Online\nBiblioteca de contratos PDF"]
+        SPO["SharePoint Online<br/>Biblioteca de contratos PDF"]
     end
 
-    subgraph AZ["Microsoft Azure - Región permitida en América"]
+    subgraph AZ["Microsoft Azure - Region permitida en America"]
         subgraph NET["rg-lectura-contratos-network-env"]
             VNET["VNet vnet-lectura-contratos-env"]
-            GW["Azure VPN Gateway\n(GatewaySubnet)"]
+            GW["Azure VPN Gateway<br/>GatewaySubnet"]
             PIP["Public IP"]
-            LNG["Local Network Gateway\n(Huawei endpoint)"]
-            VPNCONN["VPN Connection\nIPsec/IKEv2"]
+            LNG["Local Network Gateway<br/>Huawei endpoint"]
+            VPNCONN["VPN Connection<br/>IPsec/IKEv2"]
             VNET --> GW
             GW --- PIP
             GW --> VPNCONN
@@ -112,12 +112,12 @@ flowchart TB
         end
 
         subgraph SEC["rg-lectura-contratos-security-env"]
-            POL["Azure Policy\n(regiones, tags, tipos)"]
+            POL["Azure Policy<br/>regiones, tags, tipos"]
             RBAC["RBAC Assignments"]
         end
     end
 
-    subgraph HW["Huawei Cloud (no desplegado por Azure IaC)"]
+    subgraph HW["Huawei Cloud - no desplegado por Azure IaC"]
         HWGW["Huawei VPN Gateway"]
         PG["PostgreSQL"]
         OBS["OBS / contratos indexados"]
@@ -125,7 +125,7 @@ flowchart TB
 
     SPO -- "Lectura de metadatos y binarios PDF" --> APICONN
     LNG -.-> HWGW
-    LA -- "Envío de variables validadas" --> HWGW
+    LA -- "Envio de variables validadas" --> HWGW
     HWGW --> PG
     HWGW --> OBS
 ```
@@ -208,20 +208,27 @@ La región recomendada para iniciar la demo es **East US (`eastus`)**.
 | Requerimiento | Valor recomendado |
 |---|---|
 | Tipo de conectividad | VPN Site-to-Site IPsec/IKEv2 |
-| Rango IP Azure dev | `10.240.0.0/20` |
-| Rango IP Azure test | `10.240.16.0/20` |
-| Rango IP Azure prod | `10.240.32.0/20` |
-| GatewaySubnet dev | `10.240.0.0/26` |
-| Logic Apps subnet dev | `10.240.1.0/26` |
-| GatewaySubnet test | `10.240.16.0/26` |
-| Logic Apps subnet test | `10.240.17.0/26` |
-| GatewaySubnet prod | `10.240.32.0/26` |
-| Logic Apps subnet prod | `10.240.33.0/26` |
 | CIDR Huawei | Debe ser proporcionado por el cliente |
 | IP pública Huawei VPN | Debe ser proporcionada por el cliente |
 | Shared key VPN | Debe ser proporcionada de forma segura (parámetro `@secure()`, nunca en texto plano ni en el repositorio) |
 | No traslape | Azure, Huawei y red corporativa no deben compartir rangos IP |
 | Tamaño mínimo de GatewaySubnet | Se recomienda `/27` como mínimo; `/26` (como el usado en dev/test/prod) da margen para SKUs de mayor capacidad o configuraciones activo-activo |
+
+### 8.1 Detalle de rangos IP y direcciones disponibles
+
+| Requerimiento | CIDR | Direcciones totales | IPs utilizables |
+|---|---|---:|---:|
+| Rango IP Azure dev | `10.240.0.0/20` | 4096 | 4096 (bloque padre; ver subredes) |
+| GatewaySubnet dev | `10.240.0.0/26` | 64 | 59 |
+| Logic Apps subnet dev | `10.240.1.0/26` | 64 | 59 |
+| Rango IP Azure test | `10.240.16.0/20` | 4096 | 4096 (bloque padre; ver subredes) |
+| GatewaySubnet test | `10.240.16.0/26` | 64 | 59 |
+| Logic Apps subnet test | `10.240.17.0/26` | 64 | 59 |
+| Rango IP Azure prod | `10.240.32.0/20` | 4096 | 4096 (bloque padre; ver subredes) |
+| GatewaySubnet prod | `10.240.32.0/26` | 64 | 59 |
+| Logic Apps subnet prod | `10.240.33.0/26` | 64 | 59 |
+
+> **Nota:** "Direcciones totales" es el tamaño matemático del bloque (2^(32-prefijo)). "IPs utilizables" en las subredes `/26` descuenta las 5 direcciones que Azure reserva por subred (dirección de red, gateway, dos reservadas para DNS y broadcast). Los rangos `/20` son bloques padre reservados para alojar las subredes de cada ambiente; su disponibilidad real depende de cómo se subdividan.
 
 ## 9. Requerimientos de Microsoft 365
 
