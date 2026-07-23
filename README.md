@@ -19,6 +19,7 @@ El alcance de despliegue de esta fase considera únicamente los componentes de l
 9. [Requerimientos de Microsoft 365](#9-requerimientos-de-microsoft-365)
 10. [Requerimientos de Azure Landing Zone](#10-requerimientos-de-azure-landing-zone)
 11. [Niveles de permisos y roles](#11-niveles-de-permisos-y-roles)
+    - [RBAC de Microsoft Foundry para el recurso de IA](#rbac-de-microsoft-foundry-para-el-recurso-de-ia)
 12. [Parámetros requeridos para el despliegue](#12-parámetros-requeridos-para-el-despliegue)
 13. [Validaciones previas al despliegue](#13-validaciones-previas-al-despliegue)
 14. [Entregables esperados](#14-entregables-esperados)
@@ -58,6 +59,8 @@ El alcance de despliegue de esta fase considera únicamente los componentes de l
 | API Connection SharePoint | Conector para leer contratos desde SharePoint Online | Sí, si se usa conector |
 | Azure Policy | Restringir regiones, exigir tags y limitar recursos | Sí |
 | RBAC Role Assignments | Asignar permisos mínimos requeridos | Sí |
+
+> Si Document Intelligence se despliega como cuenta de **Microsoft Foundry** (AI Services multi-servicio con proyectos), el resource group de integración también es el alcance recomendado para las asignaciones de rol Foundry. Ver [RBAC de Microsoft Foundry para el recurso de IA](#rbac-de-microsoft-foundry-para-el-recurso-de-ia) en la sección 11.
 
 ## 4. Componentes fuera de alcance
 
@@ -268,6 +271,56 @@ La región recomendada para iniciar la demo es **East US (`eastus`)**.
 | Equipo de AI/documentos | Cognitive Services User / Contributor según operación | Document Intelligence |
 | Equipo de seguridad | Security Reader / Reader | Subscription o resource groups |
 | Equipo de plataforma | Contributor limitado | Resource groups del proyecto |
+
+### RBAC de Microsoft Foundry para el recurso de IA
+
+Si **Azure AI Document Intelligence** se despliega como parte de una cuenta de **Microsoft Foundry** (recurso AI Services multi-servicio con proyectos), se deben seguir los conceptos de RBAC de Foundry, adicionales a los roles clásicos de Azure (Owner, Contributor, Reader). Referencia: [Role-based access control for Microsoft Foundry](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry?tabs=owner%2Cfoundry).
+
+**Alcances (scopes) de asignación de roles en Foundry:**
+
+| Alcance | Descripción |
+|---|---|
+| Subscription | Alcance más amplio; normalmente reservado para el equipo de IT/Landing Zone |
+| Resource Group | `rg-lectura-contratos-integration-<env>` — grupo de recursos que contendrá la cuenta Foundry/AI Services |
+| Foundry resource (cuenta) | Límite administrativo, de seguridad y monitoreo del entorno Foundry |
+| Foundry project | Sub-alcance dentro del recurso Foundry para organizar el trabajo y controlar el acceso a APIs y herramientas |
+| Agente individual | Alcance más granular; controla el acceso al endpoint de un agente específico |
+
+**Roles integrados (built-in) de Foundry recomendados:**
+
+| Rol | Descripción | Uso recomendado en este proyecto |
+|---|---|---|
+| Foundry User | Acceso de lectura al proyecto/recurso Foundry y permisos de "data actions" para construir y probar | Equipo de AI/documentos que configura y prueba la extracción |
+| Foundry Project Manager | Gestiona proyectos Foundry, puede construir y asignar el rol Foundry User a otros | Líder técnico del equipo de integración/AI |
+| Foundry Account Owner | Administra la cuenta Foundry completa: despliega modelos, audita conexiones y cómputo; puede asignar Foundry User | Responsable de la solución en el resource group de integración |
+| Foundry Owner | Control total (gestión + construcción); puede asignar Foundry User, ACR y roles de monitoreo | Solo para configuración inicial o soporte crítico |
+| Foundry Agent Consumer | Acceso de mínimo privilegio para invocar únicamente el endpoint de un agente, sin poder crearlo/modificarlo | Sistemas o cuentas de servicio que solo consumen el resultado (p. ej. integración con Huawei) |
+
+> **Importante:** no usar los roles que inician con **Cognitive Services** (p. ej. Cognitive Services Contributor) para escenarios de Foundry; están pensados para acceso directo a recursos de AI Services, no al modelo de proyectos de Foundry. Tampoco usar **Azure AI Developer** para Foundry, ya que aplica a Machine Learning workspaces/hubs, no a proyectos Foundry.
+
+**Asignaciones mínimas para iniciar (por Managed Identity y usuario):**
+
+1. Asignar el rol **Foundry User** al **principal de usuario** que configurará el flujo (en el recurso Foundry o en el resource group de integración).
+2. Asignar el rol **Foundry User** a la **Managed Identity** de Azure Logic Apps para que pueda invocar Document Intelligence/Foundry en tiempo de ejecución.
+3. Si el usuario que crea el proyecto ya tiene rol **Owner** a nivel de subscription o resource group, ambas asignaciones pueden completarse automáticamente al crear el proyecto.
+
+**Mapeo sugerido de RBAC empresarial para este proyecto:**
+
+| Persona / Identidad | Rol y alcance | Propósito |
+|---|---|---|
+| IT admin / Landing Zone | Owner en subscription | Garantiza estándares empresariales y delega roles de administración de Foundry |
+| Responsable de integración | Foundry Account Owner en el recurso Foundry (`rg-lectura-contratos-integration-<env>`) | Despliega y audita el recurso Foundry/AI Services, asigna Foundry User a su equipo |
+| Desarrollador del flujo (Logic Apps) | Foundry User en el proyecto Foundry | Construye y prueba la extracción de variables contractuales |
+| Managed Identity de Logic Apps | Foundry User en el recurso/proyecto Foundry | Permite la invocación de Document Intelligence en tiempo de ejecución sin usar claves |
+| Integración con Huawei (si aplica) | Foundry Agent Consumer a nivel de proyecto o agente | Consumo del resultado final sin permisos de construcción |
+
+**Notas y limitaciones relevantes:**
+
+- Se recomienda autenticación con **Microsoft Entra ID** (RBAC) en lugar de claves; con autenticación por clave se obtiene acceso completo sin restricciones de rol.
+- Se requiere el rol **Contributor** a nivel subscription para ver y purgar cuentas Foundry eliminadas.
+- Los usuarios con rol **Contributor** pueden desplegar modelos en Foundry.
+- Para crear roles personalizados sobre el recurso, se requiere el rol **Owner** en dicho recurso.
+- Si se necesita un rol personalizado más restrictivo que **Foundry User**, se puede definir un rol custom a nivel de subscription (ver ejemplo de plantilla JSON en la documentación referenciada).
 
 ## 12. Parámetros requeridos para el despliegue
 
